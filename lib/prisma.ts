@@ -3,12 +3,21 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 
 const prismaClientSingleton = () => {
+    const databaseUrl = process.env.DATABASE_URL;
+
+    if (!databaseUrl) {
+        console.error("CRITICAL ERROR: DATABASE_URL is not defined in the environment!");
+    } else {
+        console.log("DATABASE_URL found, length:", databaseUrl.length);
+    }
+
     const pool = new pg.Pool({
-        connectionString: process.env.DATABASE_URL,
+        connectionString: databaseUrl,
         max: 10,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
+        connectionTimeoutMillis: 5000, // Increased timeout for docker networking
     });
+
     const adapter = new PrismaPg(pool);
     const client = new PrismaClient({
         adapter,

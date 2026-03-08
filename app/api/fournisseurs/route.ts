@@ -5,9 +5,14 @@ export const dynamic = "force-dynamic";
 
 // GET /api/fournisseurs - Liste des fournisseurs
 export async function GET() {
-    console.log("🔍 [API] Checking environment - DATABASE_URL present:", !!process.env.DATABASE_URL);
+    const envKeys = Object.keys(process.env);
+    const filterKeys = ["DATABASE_URL", "NODE_ENV", "NEXTAUTH_URL", "REDIS_URL"];
+    const foundKeys = envKeys.filter(k => filterKeys.includes(k) || k.startsWith("NEXT_"));
+    console.log("🔍 [API Debug] Available Env Keys:", foundKeys);
+
     if (!process.env.DATABASE_URL) {
         console.warn("⚠️ [API] DATABASE_URL is missing in the current process environment!");
+        console.log("🔍 [API Debug] Current Working Directory:", process.cwd());
     }
     try {
         const fournisseurs = await prisma.fournisseur.findMany({

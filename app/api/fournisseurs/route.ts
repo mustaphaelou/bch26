@@ -11,8 +11,9 @@ export async function GET() {
             orderBy: { nom: "asc" },
         });
         return NextResponse.json(fournisseurs);
-    } catch (error: any) {
-        console.error("Erreur détaillée liste fournisseurs:", error.message, error.stack);
+    } catch (error) {
+        const err = error as Error;
+        console.error("Erreur détaillée liste fournisseurs:", err.message, err.stack);
         return NextResponse.json(
             { error: "Erreur lors de la récupération des fournisseurs" },
             { status: 500 }

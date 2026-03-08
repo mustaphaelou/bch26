@@ -13,12 +13,13 @@ async function main() {
         const fournisseurs = await prisma.fournisseur.findMany();
         console.log("Found:", fournisseurs.length);
         console.log(JSON.stringify(fournisseurs, null, 2));
-    } catch (error: any) {
+    } catch (error) {
+        const err = error as Error & { code?: string; meta?: Record<string, unknown> };
         console.error("PRISMA ERROR:");
-        console.error("Message:", error.message);
-        if (error.code) console.error("Code:", error.code);
-        if (error.meta) console.error("Meta:", JSON.stringify(error.meta));
-        console.error("Stack:", error.stack);
+        console.error("Message:", err.message);
+        if (err.code) console.error("Code:", err.code);
+        if (err.meta) console.error("Meta:", JSON.stringify(err.meta));
+        console.error("Stack:", err.stack);
         process.exit(1);
     } finally {
         await prisma.$disconnect();

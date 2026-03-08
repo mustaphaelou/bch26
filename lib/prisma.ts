@@ -5,10 +5,17 @@ import pg from "pg";
 const prismaClientSingleton = () => {
     const databaseUrl = process.env.DATABASE_URL;
 
+    console.log("🔍 [Prisma Debug] DATABASE_URL from process.env:", !!databaseUrl);
+
+    // Log related env vars to see what's available
+    const relatedVars = Object.keys(process.env).filter(k => k.startsWith("DB") || k.includes("DATABASE") || k.startsWith("POSTGRES"));
+    console.log("🔍 [Prisma Debug] Related env vars found:", relatedVars);
+
     if (!databaseUrl) {
-        console.error("CRITICAL ERROR: DATABASE_URL is not defined in the environment!");
+        console.error("❌ CRITICAL ERROR: DATABASE_URL is not defined in the environment!");
     } else {
-        console.log("DATABASE_URL found, length:", databaseUrl.length);
+        const maskedUrl = databaseUrl.replace(/:([^@]+)@/, ":****@");
+        console.log("✅ [Prisma Debug] DATABASE_URL found:", maskedUrl);
     }
 
     const pool = new pg.Pool({

@@ -5,7 +5,10 @@ export const dynamic = "force-dynamic";
 
 // GET /api/fournisseurs - Liste des fournisseurs
 export async function GET() {
-    console.log("DATABASE_URL present:", !!process.env.DATABASE_URL);
+    console.log("🔍 [API] Checking environment - DATABASE_URL present:", !!process.env.DATABASE_URL);
+    if (!process.env.DATABASE_URL) {
+        console.warn("⚠️ [API] DATABASE_URL is missing in the current process environment!");
+    }
     try {
         const fournisseurs = await prisma.fournisseur.findMany({
             orderBy: { nom: "asc" },

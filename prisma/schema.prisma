@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Fournisseur {
+  id             String          @id @default(cuid())
+  nom            String
+  adresse        String?
+  ville          String?
+  ice            String?
+  tel            String?
+  fax            String?
+  email          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  bonsDeCommande BonDeCommande[]
+
+  @@map("fournisseurs")
+}
+
+model BonDeCommande {
+  id            String          @id @default(cuid())
+  numero        String          @unique
+  dateCommande  DateTime        @default(now())
+  numeroDevis   String?
+  avecPrix      Boolean         @default(true)
+  remarque      String?
+  responsable   String          @default("Oubaha Abdelali")
+  totalHT       Float           @default(0)
+  totalTVA      Float           @default(0)
+  totalTTC      Float           @default(0)
+  tauxTVA       Float           @default(20)
+  statut        StatutBC        @default(BROUILLON)
+  fournisseurId String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  fournisseur   Fournisseur     @relation(fields: [fournisseurId], references: [id])
+  lignes        LigneCommande[]
+
+  @@index([fournisseurId])
+  @@map("bons_de_commande")
+}
+
+model LigneCommande {
+  id           String        @id @default(cuid())
+  reference    String
+  designation  String
+  quantite     Float         @default(0)
+  prixUnitaire Float         @default(0)
+  remise       Float         @default(0)
+  montantHT    Float         @default(0)
+  dossier      String?
+  bonId        String
+  bon          BonDeCommande @relation(fields: [bonId], references: [id], onDelete: Cascade)
+
+  @@index([bonId])
+  @@map("lignes_commande")
+}
+
+model Compteur {
+  id     String @id @default("bc_counter")
+  valeur Int    @default(0)
+
+  @@map("compteurs")
+}
+
+enum StatutBC {
+  BROUILLON
+  VALIDE
+}

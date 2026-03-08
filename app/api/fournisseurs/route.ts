@@ -1,27 +1,36 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getRedis } from "@/lib/redis";
+import { FournisseurSchema } from "@/lib/validations";
+import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp, logError } from "@/lib/server-utils";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/fournisseurs - Liste des fournisseurs
-export async function GET() {
-    const envKeys = Object.keys(process.env);
-    const filterKeys = ["DATABASE_URL", "NODE_ENV", "NEXTAUTH_URL", "REDIS_URL"];
-    const foundKeys = envKeys.filter(k => filterKeys.includes(k) || k.startsWith("NEXT_"));
-    console.log("🔍 [API Debug] Available Env Keys:", foundKeys);
+const CACHE_KEY = "bch26:fournisseurs_all";
+const CACHE_TTL = 300; // 5 minutes
 
-    if (!process.env.DATABASE_URL) {
-        console.warn("⚠️ [API] DATABASE_URL is missing in the current process environment!");
-        console.log("🔍 [API Debug] Current Working Directory:", process.cwd());
-    }
+// GET /api/fournisseurs - Liste des fournisseurs avec mise en cache
+export async function GET() {
     try {
+        // Try Cache
+        const redis = getRedis();
+        const cached = await redis.get(CACHE_KEY);
+        if (cached) {
+            return NextResponse.json(JSON.parse(cached));
+        }
+
+        // Fetch DB
         const fournisseurs = await prisma.fournisseur.findMany({
             orderBy: { nom: "asc" },
         });
+
+        // Store Cache
+        await redis.set(CACHE_KEY, JSON.stringify(fournisseurs), "EX", CACHE_TTL);
+
         return NextResponse.json(fournisseurs);
     } catch (error) {
-        const err = error as Error;
-        console.error("Erreur détaillée liste fournisseurs:", err.message, err.stack);
+        logError("GET /api/fournisseurs", error);
         return NextResponse.json(
             { error: "Erreur lors de la récupération des fournisseurs" },
             { status: 500 }
@@ -32,23 +41,37 @@ export async function GET() {
 // POST /api/fournisseurs - Créer un fournisseur
 export async function POST(request: Request) {
     try {
-        const body = await request.json();
-        const { nom, adresse, ville, ice, tel, fax, email } = body;
-
-        if (!nom) {
+        // Rate limiting
+        const ip = await getClientIp();
+        const limitResult = await rateLimit(`fourn_create:${ip}`, 5, 60);
+        if (!limitResult.success) {
             return NextResponse.json(
-                { error: "Le nom du fournisseur est obligatoire" },
+                { error: "Limite de création atteinte. Réessayez plus tard." },
+                { status: 429 }
+            );
+        }
+
+        const body = await request.json();
+
+        // Validate
+        const validation = FournisseurSchema.safeParse(body);
+        if (!validation.success) {
+            return NextResponse.json(
+                { error: "Données invalides", details: validation.error.format() },
                 { status: 400 }
             );
         }
 
         const fournisseur = await prisma.fournisseur.create({
-            data: { nom, adresse, ville, ice, tel, fax, email },
+            data: validation.data,
         });
+
+        // Invalidate Cache
+        await getRedis().del(CACHE_KEY);
 
         return NextResponse.json(fournisseur, { status: 201 });
     } catch (error) {
-        console.error("Erreur création fournisseur:", error);
+        logError("POST /api/fournisseurs", error);
         return NextResponse.json(
             { error: "Erreur lors de la création du fournisseur" },
             { status: 500 }

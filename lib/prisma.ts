@@ -3,6 +3,21 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 
+import Decimal from "decimal.js";
+
+/**
+ * BigInt and Decimal Serialization Fix
+ * Necessary for sending high-precision database types over JSON APIs
+ * Using Decimal.js for consistent precision across the app.
+ */
+(BigInt.prototype as any).toJSON = function () {
+    return this.toString();
+};
+
+(Decimal.prototype as any).toJSON = function () {
+    return this.toString();
+};
+
 const prismaClientSingleton = () => {
     const databaseUrl = process.env.DATABASE_URL;
 
@@ -19,12 +34,21 @@ const prismaClientSingleton = () => {
     );
     console.log("🔍 [Prisma Debug] Keys found in process.env:", databaseRelatedKeys);
 
-    if (databaseUrl) {
+    if (databaseUrl && databaseUrl.trim() !== "") {
         const maskedUrl = databaseUrl.replace(/:([^@]+)@/, ":****@");
         console.log("✅ [Prisma Debug] DATABASE_URL found:", maskedUrl);
     } else {
-        console.error("❌ CRITICAL ERROR: DATABASE_URL is not defined in the environment!");
-        console.log("🔍 [Prisma Debug] CWD:", process.cwd());
+        console.error("❌ CRITICAL ERROR: DATABASE_URL is not defined or is empty!");
+        console.log("🔍 [Prisma Debug] Diagnosis:");
+        console.log("   - CWD:", process.cwd());
+        console.log("   - NODE_ENV:", process.env.NODE_ENV);
+
+        const allKeys = Object.keys(process.env).sort();
+        console.log("   - Total Env Keys:", allKeys.length);
+        console.log("   - Known Keys found:", allKeys.filter(k => k.includes("URL") || k.includes("DATABASE") || k.includes("COOLIFY")));
+
+        // Reminder: In Next.js standalone mode, .env files are NOT automatically loaded from the filesystem in production.
+        // You MUST define DATABASE_URL in your deployment platform (e.g., Coolify's Environment Variables dashboard).
     }
 
     const pool = new pg.Pool({

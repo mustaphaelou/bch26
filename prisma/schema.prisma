@@ -30,10 +30,10 @@ model BonDeCommande {
   avecPrix      Boolean         @default(true)
   remarque      String?
   responsable   String          @default("Oubaha Abdelali")
-  totalHT       Float           @default(0)
-  totalTVA      Float           @default(0)
-  totalTTC      Float           @default(0)
-  tauxTVA       Float           @default(20)
+  totalHT       Decimal         @default(0) @db.Decimal(12, 2)
+  totalTVA      Decimal         @default(0) @db.Decimal(12, 2)
+  totalTTC      Decimal         @default(0) @db.Decimal(12, 2)
+  tauxTVA       Decimal         @default(20) @db.Decimal(5, 2)
   statut        StatutBC        @default(BROUILLON)
   fournisseurId String
   createdAt     DateTime        @default(now())
@@ -42,6 +42,8 @@ model BonDeCommande {
   lignes        LigneCommande[]
 
   @@index([fournisseurId])
+  @@index([statut])
+  @@index([createdAt(sort: Desc)])
   @@map("bons_de_commande")
 }
 
@@ -49,10 +51,10 @@ model LigneCommande {
   id           String        @id @default(cuid())
   reference    String
   designation  String
-  quantite     Float         @default(0)
-  prixUnitaire Float         @default(0)
-  remise       Float         @default(0)
-  montantHT    Float         @default(0)
+  quantite     Decimal       @default(0) @db.Decimal(12, 3)
+  prixUnitaire Decimal       @default(0) @db.Decimal(12, 2)
+  remise       Decimal       @default(0) @db.Decimal(5, 2)
+  montantHT    Decimal       @default(0) @db.Decimal(12, 2)
   dossier      String?
   bonId        String
   bon          BonDeCommande @relation(fields: [bonId], references: [id], onDelete: Cascade)
@@ -71,4 +73,5 @@ model Compteur {
 enum StatutBC {
   BROUILLON
   VALIDE
+  ANNULE
 }

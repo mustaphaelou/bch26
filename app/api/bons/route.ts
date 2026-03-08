@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRedis } from "@/lib/redis";
+import { CreateBCSchema } from "@/lib/validations";
+import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp, logError } from "@/lib/server-utils";
+import Decimal from "decimal.js";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +17,7 @@ export async function GET(request: Request) {
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "20");
 
-        const where: Record<string, unknown> = {};
+        const where: Record<string, any> = {};
         if (statut) where.statut = statut;
         if (search) {
             where.OR = [
@@ -35,7 +39,7 @@ export async function GET(request: Request) {
 
         return NextResponse.json({ bons, total, page, limit });
     } catch (error) {
-        console.error("Erreur liste BC:", error);
+        logError("GET /api/bons", error);
         return NextResponse.json(
             { error: "Erreur lors de la récupération des bons" },
             { status: 500 }
@@ -43,14 +47,16 @@ export async function GET(request: Request) {
     }
 }
 
-// Génère le prochain numéro de BC
+/**
+ * Génère le prochain numéro de BC de manière séquentielle
+ * Utilise Redis pour la performance, avec fallback DB
+ */
 async function getNextNumero(): Promise<string> {
-    // Try Redis counter first for speed
     let counter: number;
     try {
         counter = await getRedis().incr("bch26:bc_counter");
-    } catch {
-        // Fallback to DB
+    } catch (error) {
+        console.warn("Redis counter unavailable, falling back to DB:", error);
         const compteur = await prisma.compteur.upsert({
             where: { id: "bc_counter" },
             update: { valeur: { increment: 1 } },
@@ -65,92 +71,89 @@ async function getNextNumero(): Promise<string> {
 // POST /api/bons - Créer un bon de commande
 export async function POST(request: Request) {
     try {
+        // Rate limiting
+        const ip = await getClientIp();
+        const limitResult = await rateLimit(`bc_create:${ip}`, 10, 60);
+        if (!limitResult.success) {
+            return NextResponse.json(
+                { error: "Trop de requêtes. Veuillez patienter." },
+                { status: 429, headers: { "Retry-After": limitResult.reset.toString() } }
+            );
+        }
+
         const body = await request.json();
-        const {
-            dateCommande,
-            numeroDevis,
-            fournisseurId,
-            avecPrix,
-            remarque,
-            responsable,
-            tauxTVA,
-            lignes,
-        } = body;
 
-        if (!fournisseurId) {
+        // 1. Validation
+        const validation = CreateBCSchema.safeParse(body);
+        if (!validation.success) {
             return NextResponse.json(
-                { error: "Le fournisseur est obligatoire" },
+                { error: "Validation échouée", details: validation.error.format() },
                 { status: 400 }
             );
         }
 
-        if (!lignes || lignes.length === 0) {
-            return NextResponse.json(
-                { error: "Au moins une ligne de commande est requise" },
-                { status: 400 }
-            );
-        }
+        const data = validation.data;
 
-        const numero = await getNextNumero();
-        const tva = tauxTVA || 20;
+        // 2. Transaction Atomique
+        const bon = await prisma.$transaction(async (tx) => {
+            const numero = await getNextNumero();
 
-        // Calculate totals
-        const processedLignes = lignes.map(
-            (l: {
-                reference: string;
-                designation: string;
-                quantite: number;
-                prixUnitaire: number;
-                remise: number;
-                dossier: string;
-            }) => {
-                const montantBrut = l.quantite * l.prixUnitaire;
-                const montantRemise = montantBrut * (l.remise / 100);
-                const montantHT = montantBrut - montantRemise;
+            const processedLignes = data.lignes.map(l => {
+                const qte = new Decimal(l.quantite);
+                const pu = new Decimal(l.prixUnitaire);
+                const remisePct = new Decimal(l.remise).div(100);
+
+                const montantBrut = qte.times(pu);
+                const montantRemise = montantBrut.times(remisePct);
+                const montantHT = montantBrut.minus(montantRemise);
+
                 return {
                     reference: l.reference,
                     designation: l.designation,
-                    quantite: l.quantite,
-                    prixUnitaire: l.prixUnitaire || 0,
-                    remise: l.remise || 0,
-                    montantHT: avecPrix !== false ? montantHT : 0,
-                    dossier: l.dossier || "",
+                    quantite: qte as any,
+                    prixUnitaire: pu as any,
+                    remise: new Decimal(l.remise) as any,
+                    montantHT: (data.avecPrix ? montantHT : new Decimal(0)) as any,
+                    dossier: l.dossier,
                 };
-            }
-        );
+            });
 
-        const totalHT = processedLignes.reduce(
-            (sum: number, l: { montantHT: number }) => sum + l.montantHT,
-            0
-        );
-        const totalTVA = totalHT * (tva / 100);
-        const totalTTC = totalHT + totalTVA;
+            const totalHT = processedLignes.reduce(
+                (sum, l) => sum.plus(l.montantHT as any),
+                new Decimal(0)
+            );
+            const tvaFactor = new Decimal(data.tauxTVA).div(100);
+            const totalTVA = totalHT.times(tvaFactor);
+            const totalTTC = totalHT.plus(totalTVA);
 
-        const bon = await prisma.bonDeCommande.create({
-            data: {
-                numero,
-                dateCommande: dateCommande ? new Date(dateCommande) : new Date(),
-                numeroDevis: numeroDevis || "",
-                fournisseurId,
-                avecPrix: avecPrix !== false,
-                remarque: remarque || "",
-                responsable: responsable || "Oubaha Abdelali",
-                tauxTVA: tva,
-                totalHT: avecPrix !== false ? totalHT : 0,
-                totalTVA: avecPrix !== false ? totalTVA : 0,
-                totalTTC: avecPrix !== false ? totalTTC : 0,
-                lignes: {
-                    create: processedLignes,
+            return await tx.bonDeCommande.create({
+                data: {
+                    numero,
+                    dateCommande: data.dateCommande,
+                    numeroDevis: data.numeroDevis,
+                    fournisseurId: data.fournisseurId,
+                    avecPrix: data.avecPrix,
+                    remarque: data.remarque,
+                    responsable: data.responsable,
+                    tauxTVA: new Decimal(data.tauxTVA) as any,
+                    totalHT: (data.avecPrix ? totalHT : new Decimal(0)) as any,
+                    totalTVA: (data.avecPrix ? totalTVA : new Decimal(0)) as any,
+                    totalTTC: (data.avecPrix ? totalTTC : new Decimal(0)) as any,
+                    lignes: {
+                        create: processedLignes,
+                    },
                 },
-            },
-            include: { fournisseur: true, lignes: true },
+                include: { fournisseur: true, lignes: true },
+            });
         });
+
+        // Optional: Invalidate caches if needed
 
         return NextResponse.json(bon, { status: 201 });
     } catch (error) {
-        console.error("Erreur création BC:", error);
+        logError("POST /api/bons", error);
         return NextResponse.json(
-            { error: "Erreur lors de la création du bon de commande" },
+            { error: "Serveur saturé ou erreur interne. Veuillez réessayer." },
             { status: 500 }
         );
     }

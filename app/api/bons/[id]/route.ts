@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+import { UpdateBCSchema } from "@/lib/validations";
+
 // GET /api/bons/[id]
 export async function GET(
     _request: Request,
@@ -24,7 +26,7 @@ export async function GET(
 
         return NextResponse.json(bon);
     } catch (error) {
-        console.error("Erreur récupération BC:", error);
+        console.error("❌ [API] Erreur récupération BC:", error);
         return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
     }
 }
@@ -37,22 +39,25 @@ export async function PUT(
     try {
         const { id } = await params;
         const body = await request.json();
-        const { statut, remarque, responsable } = body;
 
-        const updateData: Record<string, unknown> = {};
-        if (statut) updateData.statut = statut;
-        if (remarque !== undefined) updateData.remarque = remarque;
-        if (responsable) updateData.responsable = responsable;
+        // Validate
+        const validation = UpdateBCSchema.safeParse(body);
+        if (!validation.success) {
+            return NextResponse.json(
+                { error: "Validation échouée", details: validation.error.format() },
+                { status: 400 }
+            );
+        }
 
         const bon = await prisma.bonDeCommande.update({
             where: { id },
-            data: updateData,
+            data: validation.data,
             include: { fournisseur: true, lignes: true },
         });
 
         return NextResponse.json(bon);
     } catch (error) {
-        console.error("Erreur mise à jour BC:", error);
+        console.error("❌ [API] Erreur mise à jour BC:", error);
         return NextResponse.json(
             { error: "Erreur lors de la mise à jour" },
             { status: 500 }

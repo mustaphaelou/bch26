@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+import { FournisseurSchema } from "@/lib/validations";
+
 // GET /api/fournisseurs/[id]
 export async function GET(
     _request: Request,
@@ -23,7 +25,7 @@ export async function GET(
 
         return NextResponse.json(fournisseur);
     } catch (error) {
-        console.error("Erreur récupération fournisseur:", error);
+        console.error("❌ [API] Erreur récupération fournisseur:", error);
         return NextResponse.json(
             { error: "Erreur serveur" },
             { status: 500 }
@@ -39,16 +41,24 @@ export async function PUT(
     try {
         const { id } = await params;
         const body = await request.json();
-        const { nom, adresse, ville, ice, tel, fax, email } = body;
+
+        // Validate
+        const validation = FournisseurSchema.safeParse(body);
+        if (!validation.success) {
+            return NextResponse.json(
+                { error: "Validation échouée", details: validation.error.format() },
+                { status: 400 }
+            );
+        }
 
         const fournisseur = await prisma.fournisseur.update({
             where: { id },
-            data: { nom, adresse, ville, ice, tel, fax, email },
+            data: validation.data,
         });
 
         return NextResponse.json(fournisseur);
     } catch (error) {
-        console.error("Erreur mise à jour fournisseur:", error);
+        console.error("❌ [API] Erreur mise à jour fournisseur:", error);
         return NextResponse.json(
             { error: "Erreur lors de la mise à jour" },
             { status: 500 }

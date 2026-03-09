@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { StatutBC, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getRedis } from "@/lib/redis";
 import { CreateBCSchema } from "@/lib/validations";
@@ -17,8 +18,8 @@ export async function GET(request: Request) {
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "20");
 
-        const where: Record<string, any> = {};
-        if (statut) where.statut = statut;
+        const where: Prisma.BonDeCommandeWhereInput = {};
+        if (statut) where.statut = statut as StatutBC;
         if (search) {
             where.OR = [
                 { numero: { contains: search, mode: "insensitive" } },
@@ -110,16 +111,16 @@ export async function POST(request: Request) {
                 return {
                     reference: l.reference,
                     designation: l.designation,
-                    quantite: qte as any,
-                    prixUnitaire: pu as any,
-                    remise: new Decimal(l.remise) as any,
-                    montantHT: (data.avecPrix ? montantHT : new Decimal(0)) as any,
+                    quantite: qte as unknown as Prisma.Decimal,
+                    prixUnitaire: pu as unknown as Prisma.Decimal,
+                    remise: new Decimal(l.remise) as unknown as Prisma.Decimal,
+                    montantHT: (data.avecPrix ? montantHT : new Decimal(0)) as unknown as Prisma.Decimal,
                     dossier: l.dossier,
                 };
             });
 
             const totalHT = processedLignes.reduce(
-                (sum, l) => sum.plus(l.montantHT as any),
+                (sum, l) => sum.plus(new Decimal(l.montantHT.toString())),
                 new Decimal(0)
             );
             const tvaFactor = new Decimal(data.tauxTVA).div(100);
@@ -135,10 +136,10 @@ export async function POST(request: Request) {
                     avecPrix: data.avecPrix,
                     remarque: data.remarque,
                     responsable: data.responsable,
-                    tauxTVA: new Decimal(data.tauxTVA) as any,
-                    totalHT: (data.avecPrix ? totalHT : new Decimal(0)) as any,
-                    totalTVA: (data.avecPrix ? totalTVA : new Decimal(0)) as any,
-                    totalTTC: (data.avecPrix ? totalTTC : new Decimal(0)) as any,
+                    tauxTVA: new Decimal(data.tauxTVA) as unknown as Prisma.Decimal,
+                    totalHT: (data.avecPrix ? totalHT : new Decimal(0)) as unknown as Prisma.Decimal,
+                    totalTVA: (data.avecPrix ? totalTVA : new Decimal(0)) as unknown as Prisma.Decimal,
+                    totalTTC: (data.avecPrix ? totalTTC : new Decimal(0)) as unknown as Prisma.Decimal,
                     lignes: {
                         create: processedLignes,
                     },

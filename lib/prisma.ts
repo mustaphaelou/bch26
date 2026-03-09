@@ -10,11 +10,11 @@ import Decimal from "decimal.js";
  * Necessary for sending high-precision database types over JSON APIs
  * Using Decimal.js for consistent precision across the app.
  */
-(BigInt.prototype as any).toJSON = function () {
+(BigInt.prototype as unknown as { toJSON(): string }).toJSON = function () {
     return this.toString();
 };
 
-(Decimal.prototype as any).toJSON = function () {
+(Decimal.prototype as unknown as { toJSON(): string }).toJSON = function () {
     return this.toString();
 };
 

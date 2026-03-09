@@ -8,7 +8,7 @@ export async function getClientIp(): Promise<string> {
         const headerList = await headers();
         const forwarded = headerList.get("x-forwarded-for");
         if (forwarded) return forwarded.split(",")[0];
-    } catch (e) {
+    } catch {
         // Fallback for non-request contexts
     }
     return "127.0.0.1";

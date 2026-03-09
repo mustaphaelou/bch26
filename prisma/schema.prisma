@@ -19,6 +19,7 @@ model Fournisseur {
   updatedAt      DateTime        @updatedAt
   bonsDeCommande BonDeCommande[]
 
+  @@index([nom])
   @@map("fournisseurs")
 }
 

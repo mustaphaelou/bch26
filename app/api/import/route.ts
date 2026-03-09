@@ -1,17 +1,37 @@
 import { NextResponse } from "next/server";
 import { parseExcelBuffer } from "@/lib/excel-parser";
+import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp, logError } from "@/lib/server-utils";
 
 export const dynamic = "force-dynamic";
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 // POST /api/import - Import Excel file
 export async function POST(request: Request) {
     try {
+        const ip = await getClientIp();
+        const limitResult = await rateLimit(`excel_import:${ip}`, 5, 60); // 5 imports per min
+        if (!limitResult.success) {
+            return NextResponse.json(
+                { error: "Trop de tentatives d'import. Réessayez plus tard." },
+                { status: 429 }
+            );
+        }
+
         const formData = await request.formData();
         const file = formData.get("file") as File | null;
 
         if (!file) {
             return NextResponse.json(
                 { error: "Aucun fichier fourni" },
+                { status: 400 }
+            );
+        }
+
+        if (file.size > MAX_FILE_SIZE) {
+            return NextResponse.json(
+                { error: "Fichier trop volumineux (max 5Mo)" },
                 { status: 400 }
             );
         }
@@ -40,7 +60,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ lignes, count: lignes.length });
     } catch (error) {
-        console.error("Erreur import Excel:", error);
+        logError("POST /api/import", error);
         return NextResponse.json(
             { error: "Erreur lors de l'importation du fichier Excel" },
             { status: 500 }

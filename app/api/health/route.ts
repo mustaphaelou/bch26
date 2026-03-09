@@ -7,6 +7,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
     const status: any = {
         timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        version: "1.0.0",
         services: {
             database: { status: "unknown" },
             redis: { status: "unknown" },

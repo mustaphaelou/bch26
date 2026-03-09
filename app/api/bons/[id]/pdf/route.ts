@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { generateBonPDF, PDFBonData } from "@/lib/pdf-generator";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp, logError } from "@/lib/server-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const ip = await getClientIp();
+        const limitResult = await rateLimit(`bc_pdf:${ip}`, 30, 60); // Allow 30 PDF generations per minute
+        if (!limitResult.success) {
+            return NextResponse.json(
+                { error: "Limite de téléchargement atteinte. Réessayez plus tard." },
+                { status: 429 }
+            );
+        }
+
         const { id } = await params;
         const bon = await prisma.bonDeCommande.findUnique({
             where: { id },
@@ -32,10 +43,10 @@ export async function GET(
             avecPrix: bon.avecPrix,
             responsable: bon.responsable,
             remarque: bon.remarque || "",
-            tauxTVA: bon.tauxTVA,
-            totalHT: bon.totalHT,
-            totalTVA: bon.totalTVA,
-            totalTTC: bon.totalTTC,
+            tauxTVA: (bon.tauxTVA as any).toNumber?.() ?? Number(bon.tauxTVA),
+            totalHT: (bon.totalHT as any).toNumber?.() ?? Number(bon.totalHT),
+            totalTVA: (bon.totalTVA as any).toNumber?.() ?? Number(bon.totalTVA),
+            totalTTC: (bon.totalTTC as any).toNumber?.() ?? Number(bon.totalTTC),
             fournisseur: {
                 nom: bon.fournisseur.nom,
                 adresse: bon.fournisseur.adresse || "",
@@ -48,10 +59,10 @@ export async function GET(
             lignes: bon.lignes.map((l) => ({
                 reference: l.reference,
                 designation: l.designation,
-                quantite: l.quantite,
-                prixUnitaire: l.prixUnitaire,
-                remise: l.remise,
-                montantHT: l.montantHT,
+                quantite: (l.quantite as any).toNumber?.() ?? Number(l.quantite),
+                prixUnitaire: (l.prixUnitaire as any).toNumber?.() ?? Number(l.prixUnitaire),
+                remise: (l.remise as any).toNumber?.() ?? Number(l.remise),
+                montantHT: (l.montantHT as any).toNumber?.() ?? Number(l.montantHT),
                 dossier: l.dossier || "",
             })),
         };
@@ -67,7 +78,7 @@ export async function GET(
             },
         });
     } catch (error) {
-        console.error("Erreur génération PDF:", error);
+        logError("GET /api/bons/[id]/pdf", error);
         return NextResponse.json(
             { error: "Erreur lors de la génération du PDF" },
             { status: 500 }
